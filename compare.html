@@ -3,348 +3,431 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>文本差异对比工具</title>
+    <title>文本差异对比</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jsdiff/5.1.0/diff.min.js"></script>
     <style>
-        * {
-            margin: 0;
-            padding: 0;
-            box-sizing: border-box;
+        /* 核心字体设置 */
+        .code-font {
+            font-family: Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+            font-size: 14px;
+            line-height: 24px;
         }
 
-        body {
-            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            height: 100vh;
+        /* 自定义滚动条 */
+        .custom-scroll::-webkit-scrollbar {
+            width: 10px;
+            height: 10px;
+        }
+        .custom-scroll::-webkit-scrollbar-track { background: #f3f4f6; }
+        .custom-scroll::-webkit-scrollbar-thumb { background: #d1d5db; border-radius: 5px; border: 2px solid #f3f4f6; }
+        .custom-scroll::-webkit-scrollbar-thumb:hover { background: #9ca3af; }
+
+        /* 布局容器 */
+        .panel-container {
+            display: flex;
+            height: 100%;
+            border: 1px solid #e5e7eb;
+            background: white;
+            position: relative;
+        }
+
+        /* 左侧装订线 */
+        .gutter {
+            width: 40px;
+            background-color: #f9fafb;
+            border-right: 1px solid #e5e7eb;
+            flex-shrink: 0;
+            user-select: none;
             overflow: hidden;
+            text-align: center;
+            padding-top: 1rem;
+            padding-bottom: 1rem;
+            color: #d97706;
         }
 
-        .container {
-            height: 100vh;
+        .gutter-line {
+            height: 24px;
             display: flex;
-            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            font-size: 16px;
         }
 
-        .clear-btn {
-            background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
-            color: white;
-            border: none;
-            border-radius: 6px;
-            cursor: pointer;
-            font-size: 12px;
-            font-weight: 500;
-            transition: all 0.3s;
-            padding: 6px 12px;
-            margin-left: 8px;
-        }
-
-        .clear-btn:hover {
-            transform: translateY(-1px);
-            box-shadow: 0 4px 12px rgba(245, 87, 108, 0.4);
-        }
-
-        .clear-btn:active {
-            transform: translateY(0);
-        }
-
-        .stats {
-            padding: 10px 20px;
-            background: #fff3cd;
-            border-bottom: 2px solid #ffc107;
-            font-size: 13px;
-            color: #856404;
-            display: none;
-        }
-
-        .stats.show {
-            display: block;
-        }
-
-        .diff-container {
-            display: flex;
-            flex: 1;
+        /* 编辑器堆叠区 */
+        .editor-stack {
+            flex-grow: 1;
+            position: relative;
             overflow: hidden;
-        }
-
-        .panel {
-            flex: 1;
-            display: flex;
-            flex-direction: column;
             background: white;
         }
 
-        .panel:first-child {
-            border-right: 2px solid #e9ecef;
-        }
-
-        .panel-header {
-            padding: 12px 20px;
-            background: #f8f9fa;
-            border-bottom: 2px solid #e9ecef;
-            font-weight: 600;
-            color: #495057;
-            font-size: 14px;
-        }
-
-        .panel-content {
-            flex: 1;
-            position: relative;
-            overflow: hidden;
-        }
-
-        .editor-wrapper {
-            position: relative;
-            width: 100%;
-            height: 100%;
-        }
-
-        .text-display {
+        /* 底层：显示颜色 */
+        .backdrop {
             position: absolute;
             top: 0;
             left: 0;
-            width: 100%;
-            height: 100%;
-            padding: 16px;
-            font-family: 'Consolas', 'Monaco', monospace;
-            font-size: 14px;
-            line-height: 1.8;
-            overflow-y: auto;
-            white-space: pre-wrap;
-            word-wrap: break-word;
-            border: none;
-            background: transparent;
+            right: 0;
+            bottom: 0;
+            z-index: 1;
+            padding: 1rem;
+            overflow: auto;
+            white-space: pre;
             pointer-events: none;
+            color: #374151;
         }
 
-        textarea.editable {
+        /* 顶层：输入框 */
+        .textarea-input {
             position: absolute;
             top: 0;
             left: 0;
+            right: 0;
+            bottom: 0;
+            z-index: 2;
+            padding: 1rem;
+            margin: 0;
+            border: none;
             width: 100%;
             height: 100%;
-            padding: 16px;
-            font-family: 'Consolas', 'Monaco', monospace;
-            font-size: 14px;
-            line-height: 1.8;
-            overflow-y: auto;
-            white-space: pre-wrap;
-            word-wrap: break-word;
-            border: none;
+            overflow: auto;
+            white-space: pre;
             background: transparent;
+            color: transparent;
+            caret-color: #000;
             resize: none;
             outline: none;
-            color: transparent;
-            caret-color: black;
-            z-index: 2;
         }
 
-        .line-diff {
-            background-color: #ffe6e6;
+        /* 差异样式 */
+        .line-diff-del, .line-diff-add {
+            background-color: #ffeef0;
             display: block;
+            width: 100%;
+            box-sizing: border-box; /* 确保边框计算在内 */
+            border-left: 3px solid transparent; /* 预留边框位置 */
         }
 
-        .char-diff {
+        .word-diff-del {
             background-color: #ff9999;
+            color: #b71c1c;
+            border-radius: 2px;
+        }
+        .word-diff-add {
+            background-color: #ff9999;
+            color: #b71c1c;
+            border-radius: 2px;
         }
 
-        @media (max-width: 768px) {
-            .diff-container {
-                flex-direction: column;
-            }
+        /* 当前选中的差异行的高亮样式（模拟光标聚焦/闪烁） */
+        @keyframes pulse-border {
+            0% { border-color: #ef4444; background-color: #fca5a5; }
+            50% { border-color: transparent; background-color: #ffeef0; }
+            100% { border-color: #ef4444; background-color: #fca5a5; }
+        }
 
-            .panel:first-child {
-                border-right: none;
-                border-bottom: 2px solid #e9ecef;
-            }
+        .active-diff-line {
+            border-left: 3px solid #dc2626 !important; /* 明显的左侧红条 */
+            background-color: #fee2e2 !important;     /* 加深背景色 */
+            animation: pulse-border 1.5s infinite;    /* 呼吸灯效果 */
         }
     </style>
 </head>
-<body>
-    <div class="container">
+<body class="bg-gray-100 h-screen flex flex-col overflow-hidden font-sans">
+
+    <header class="bg-white border-b border-gray-200 px-4 py-3 flex justify-between items-center shrink-0 shadow-sm z-10">
+        <div class="font-bold text-gray-700 text-lg flex items-center gap-2">
         
-
-        <div class="stats" id="stats"></div>
-
-        <div class="diff-container">
-            <div class="panel">
-                <div class="panel-header">📄 原始文本
-                    <button class="clear-btn" onclick="clearAll()">🗑️ 清空内容</button>
-                </div>
-                
-                <div class="panel-content">
-                    <div class="editor-wrapper">
-                        <div class="text-display" id="original-display"></div>
-                        <textarea class="editable" id="original" placeholder="在此粘贴或输入原始文本..."></textarea>
-                    </div>
-                </div>
+        </div>
+        
+        <div class="flex items-center gap-4">
+            <div class="flex items-center bg-gray-50 rounded-lg border border-gray-200 p-1">
+                <button onclick="navigateDiff(-1)" class="p-1.5 text-gray-600 hover:text-blue-600 hover:bg-white hover:shadow-sm rounded transition disabled:opacity-30" id="btnPrev" title="上一处不同">
+                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 10l7-7m0 0l7 7m-7-7v18"></path></svg>
+                </button>
+                <div id="diffCounter" class="px-3 text-sm font-mono text-gray-600 w-20 text-center select-none">0 / 0</div>
+                <button onclick="navigateDiff(1)" class="p-1.5 text-gray-600 hover:text-blue-600 hover:bg-white hover:shadow-sm rounded transition disabled:opacity-30" id="btnNext" title="下一处不同">
+                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 14l-7 7m0 0l-7-7m7 7V3"></path></svg>
+                </button>
             </div>
 
-            <div class="panel">
-                <div class="panel-header">📝 新文本</div>
-                <div class="panel-content">
-                    <div class="editor-wrapper">
-                        <div class="text-display" id="modified-display"></div>
-                        <textarea class="editable" id="modified" placeholder="在此粘贴或输入新文本..."></textarea>
-                    </div>
+            <div class="h-6 w-px bg-gray-300 mx-2"></div>
+
+            <button onclick="clearAll()" class="px-4 py-2 bg-white border border-gray-300 hover:bg-gray-50 text-gray-700 text-sm font-medium rounded shadow-sm transition flex items-center gap-2">
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg>
+                清空
+            </button>
+        </div>
+    </header>
+
+    <main class="flex-1 flex flex-row h-full overflow-hidden p-2 gap-2">
+        
+        <div class="flex-1 flex flex-col min-w-0">
+            <div class="panel-container rounded shadow-sm">
+                <div id="gutterLeft" class="gutter code-font"></div>
+                <div class="editor-stack">
+                    <div id="backdropLeft" class="backdrop code-font custom-scroll"></div>
+                    <textarea id="inputLeft" class="textarea-input code-font custom-scroll" spellcheck="false" placeholder="原始文本..."></textarea>
                 </div>
             </div>
         </div>
-    </div>
+
+        <div class="flex-1 flex flex-col min-w-0">
+            <div class="panel-container rounded shadow-sm">
+                <div id="gutterRight" class="gutter code-font"></div>
+                <div class="editor-stack">
+                    <div id="backdropRight" class="backdrop code-font custom-scroll"></div>
+                    <textarea id="inputRight" class="textarea-input code-font custom-scroll" spellcheck="false" placeholder="修改后文本..."></textarea>
+                </div>
+            </div>
+        </div>
+
+    </main>
 
     <script>
-        function escapeHtml(text) {
-            const div = document.createElement('div');
-            div.textContent = text;
-            return div.innerHTML;
+        const inputLeft = document.getElementById('inputLeft');
+        const inputRight = document.getElementById('inputRight');
+        const backdropLeft = document.getElementById('backdropLeft');
+        const backdropRight = document.getElementById('backdropRight');
+        const gutterLeft = document.getElementById('gutterLeft');
+        const gutterRight = document.getElementById('gutterRight');
+        
+        // 导航相关元素
+        const diffCounter = document.getElementById('diffCounter');
+        const btnPrev = document.getElementById('btnPrev');
+        const btnNext = document.getElementById('btnNext');
+
+        const defaultLeft = "";
+        const defaultRight = "";
+
+        // 状态管理
+        let diffLocations = []; // 存储所有差异行的 DOM 对象 { left: el, right: el, top: number }
+        let currentDiffIndex = -1;
+
+        window.onload = () => {
+            inputLeft.value = defaultLeft;
+            inputRight.value = defaultRight;
+            updateDiff();
+        };
+
+        inputLeft.addEventListener('input', debounce(updateDiff, 100));
+        inputRight.addEventListener('input', debounce(updateDiff, 100));
+
+        // 同步滚动
+        const syncScroll = (source, ...targets) => {
+            source.addEventListener('scroll', () => {
+                targets.forEach(t => {
+                    t.scrollTop = source.scrollTop;
+                    t.scrollLeft = source.scrollLeft;
+                });
+            });
+        };
+        // 互相同步
+        syncScroll(inputLeft, backdropLeft, gutterLeft, inputRight, backdropRight, gutterRight);
+        syncScroll(inputRight, backdropRight, gutterRight, inputLeft, backdropLeft, gutterLeft);
+
+        function clearAll() {
+            inputLeft.value = "";
+            inputRight.value = "";
+            updateDiff();
         }
 
-        // 字符级别的差异比较
-        function getCharDiff(str1, str2) {
-            const len1 = str1.length;
-            const len2 = str2.length;
-            const matrix = [];
-
-            for (let i = 0; i <= len1; i++) {
-                matrix[i] = [i];
-            }
-            for (let j = 0; j <= len2; j++) {
-                matrix[0][j] = j;
-            }
-
-            for (let i = 1; i <= len1; i++) {
-                for (let j = 1; j <= len2; j++) {
-                    if (str1[i - 1] === str2[j - 1]) {
-                        matrix[i][j] = matrix[i - 1][j - 1];
-                    } else {
-                        matrix[i][j] = Math.min(
-                            matrix[i - 1][j] + 1,
-                            matrix[i][j - 1] + 1,
-                            matrix[i - 1][j - 1] + 1
-                        );
-                    }
-                }
-            }
-
-            const diffs = [];
-            let i = len1, j = len2;
-            while (i > 0 || j > 0) {
-                if (i > 0 && j > 0 && str1[i - 1] === str2[j - 1]) {
-                    diffs.unshift({ type: 'equal', char: str1[i - 1] });
-                    i--;
-                    j--;
-                } else if (j > 0 && (i === 0 || matrix[i][j - 1] <= matrix[i - 1][j])) {
-                    diffs.unshift({ type: 'add', char: str2[j - 1] });
-                    j--;
-                } else if (i > 0) {
-                    diffs.unshift({ type: 'remove', char: str1[i - 1] });
-                    i--;
-                }
-            }
-
-            return diffs;
-        }
-
-        function highlightLine(line1, line2, isFirst) {
-            if (line1 === line2) {
-                return escapeHtml(line1);
-            }
-
-            const diffs = getCharDiff(line1, line2);
-            let result = '';
-
-            for (const diff of diffs) {
-                if (diff.type === 'equal') {
-                    result += escapeHtml(diff.char);
-                } else if (isFirst && diff.type === 'remove') {
-                    result += `<span class="char-diff">${escapeHtml(diff.char)}</span>`;
-                } else if (!isFirst && diff.type === 'add') {
-                    result += `<span class="char-diff">${escapeHtml(diff.char)}</span>`;
-                }
-            }
-
-            return result;
+        function debounce(func, wait) {
+            let timeout;
+            return function(...args) {
+                clearTimeout(timeout);
+                timeout = setTimeout(() => func.apply(this, args), wait);
+            };
         }
 
         function updateDiff() {
-            const originalText = document.getElementById('original').value;
-            const modifiedText = document.getElementById('modified').value;
-            const originalDisplay = document.getElementById('original-display');
-            const modifiedDisplay = document.getElementById('modified-display');
-            const statsDiv = document.getElementById('stats');
+            const text1 = inputLeft.value;
+            const text2 = inputRight.value;
 
-            const lines1 = originalText.split('\n');
-            const lines2 = modifiedText.split('\n');
-            const maxLen = Math.max(lines1.length, lines2.length);
+            const diffs = Diff.diffChars(text1, text2);
 
-            let diffCount = 0;
-            const result1 = [];
-            const result2 = [];
+            renderPane(diffs, 'left', backdropLeft, gutterLeft);
+            renderPane(diffs, 'right', backdropRight, gutterRight);
 
-            for (let i = 0; i < maxLen; i++) {
-                const line1 = lines1[i] !== undefined ? lines1[i] : '';
-                const line2 = lines2[i] !== undefined ? lines2[i] : '';
+            // 渲染完成后，重新计算差异位置列表
+            scanDiffs();
+        }
 
-                if (line1 !== line2) {
-                    result1.push(`<span class="line-diff">${highlightLine(line1, line2, true)}</span>`);
-                    result2.push(`<span class="line-diff">${highlightLine(line1, line2, false)}</span>`);
-                    diffCount++;
+        function renderPane(diffs, side, backdropEl, gutterEl) {
+            let htmlContent = "";
+            let htmlGutter = "";
+            
+            let currentLineHtml = ""; 
+            let lineHasChange = false;
+
+            const flushLine = () => {
+                const lineClass = lineHasChange 
+                    ? (side === 'left' ? 'line-diff-del' : 'line-diff-add') 
+                    : '';
+                
+                // 增加 data-diff 标记，方便 JS 查找
+                const diffAttr = lineHasChange ? 'data-diff="true"' : '';
+                
+                const content = currentLineHtml === '' ? '<br>' : currentLineHtml;
+                htmlContent += `<div class="${lineClass}" ${diffAttr}>${content}</div>`;
+
+                let arrow = "";
+                if (lineHasChange) {
+                    arrow = side === 'left' ? '⇨' : '⇦';
+                }
+                htmlGutter += `<div class="gutter-line">${arrow}</div>`;
+
+                currentLineHtml = "";
+                lineHasChange = false;
+            };
+
+            diffs.forEach(part => {
+                let shouldShow = false;
+                let spanClass = "";
+
+                if (side === 'left') {
+                    if (part.removed) {
+                        shouldShow = true;
+                        spanClass = "word-diff-del";
+                        lineHasChange = true;
+                    } else if (!part.added) { 
+                        shouldShow = true;
+                    }
                 } else {
-                    result1.push(escapeHtml(line1));
-                    result2.push(escapeHtml(line2));
+                    if (part.added) {
+                        shouldShow = true;
+                        spanClass = "word-diff-add";
+                        lineHasChange = true;
+                    } else if (!part.removed) {
+                        shouldShow = true;
+                    }
+                }
+
+                if (shouldShow) {
+                    const lines = part.value.split('\n');
+                    lines.forEach((lineText, idx) => {
+                        const escapedText = escapeHtml(lineText);
+                        
+                        if (spanClass) {
+                            currentLineHtml += `<span class="${spanClass}">${escapedText}</span>`;
+                        } else {
+                            currentLineHtml += escapedText;
+                        }
+
+                        if (idx < lines.length - 1) {
+                            flushLine();
+                        }
+                    });
+                }
+            });
+
+            flushLine(); 
+
+            backdropEl.innerHTML = htmlContent;
+            gutterEl.innerHTML = htmlGutter;
+        }
+
+        function escapeHtml(text) {
+            return text
+                .replace(/&/g, "&amp;")
+                .replace(/</g, "&lt;")
+                .replace(/>/g, "&gt;")
+                .replace(/"/g, "&quot;")
+                .replace(/'/g, "&#039;");
+        }
+
+        // ==========================
+        //  新增：差异导航逻辑
+        // ==========================
+
+        function scanDiffs() {
+            // 清空旧数据
+            diffLocations = [];
+            currentDiffIndex = -1;
+
+            // 获取左右两侧所有的行div
+            const leftLines = Array.from(backdropLeft.children);
+            const rightLines = Array.from(backdropRight.children);
+            
+            // 找出两侧任何一方标记为 diff 的行索引
+            // 只要同一行在左边或右边有变动，就视为一个“差异点”
+            const maxLen = Math.max(leftLines.length, rightLines.length);
+            
+            for (let i = 0; i < maxLen; i++) {
+                const leftEl = leftLines[i];
+                const rightEl = rightLines[i];
+                
+                const isLeftDiff = leftEl && leftEl.hasAttribute('data-diff');
+                const isRightDiff = rightEl && rightEl.hasAttribute('data-diff');
+
+                if (isLeftDiff || isRightDiff) {
+                    diffLocations.push({
+                        index: i,
+                        leftEl: leftEl,
+                        rightEl: rightEl
+                    });
                 }
             }
 
-            originalDisplay.innerHTML = result1.join('\n');
-            modifiedDisplay.innerHTML = result2.join('\n');
+            updateNavUI();
+        }
 
-            // 同步滚动
-            syncScroll();
-
-            if (originalText || modifiedText) {
-                statsDiv.innerHTML = `
-                    📊 对比统计：
-                    原文本 <strong>${lines1.length}</strong> 行，
-                    新文本 <strong>${lines2.length}</strong> 行，
-                    <strong>${diffCount}</strong> 行存在差异
-                `;
-                statsDiv.classList.add('show');
+        function updateNavUI() {
+            const total = diffLocations.length;
+            const current = currentDiffIndex + 1; // 转换为 1-based
+            
+            if (total === 0) {
+                diffCounter.textContent = "无差异";
+                btnPrev.disabled = true;
+                btnNext.disabled = true;
             } else {
-                statsDiv.classList.remove('show');
+                diffCounter.textContent = `${current > 0 ? current : '-'} / ${total}`;
+                btnPrev.disabled = false;
+                btnNext.disabled = false;
             }
         }
 
-        function syncScroll() {
-            const original = document.getElementById('original');
-            const modified = document.getElementById('modified');
-            const originalDisplay = document.getElementById('original-display');
-            const modifiedDisplay = document.getElementById('modified-display');
+        function navigateDiff(direction) {
+            if (diffLocations.length === 0) return;
 
-            originalDisplay.scrollTop = original.scrollTop;
-            modifiedDisplay.scrollTop = modified.scrollTop;
+            // 移除旧的高亮
+            if (currentDiffIndex >= 0 && currentDiffIndex < diffLocations.length) {
+                const prevLoc = diffLocations[currentDiffIndex];
+                if(prevLoc.leftEl) prevLoc.leftEl.classList.remove('active-diff-line');
+                if(prevLoc.rightEl) prevLoc.rightEl.classList.remove('active-diff-line');
+            }
+
+            // 计算新索引
+            currentDiffIndex += direction;
+
+            // 循环跳转逻辑 (可选，这里做成到了末尾就停住)
+            if (currentDiffIndex < 0) currentDiffIndex = diffLocations.length - 1; // 循环到最后
+            if (currentDiffIndex >= diffLocations.length) currentDiffIndex = 0; // 循环到开始
+
+            const target = diffLocations[currentDiffIndex];
+            
+            // 1. 滚动到目标位置 (居中显示)
+            // 使用 offsetTop 计算位置
+            const el = target.rightEl || target.leftEl;
+            if (el) {
+                // 计算居中位置：元素的 offsetTop - (容器高度 / 2) + (元素高度 / 2)
+                const containerHeight = inputRight.clientHeight;
+                const scrollTop = el.offsetTop - (containerHeight / 2) + 12; // 12是半行高修正
+                
+                inputRight.scrollTo({ top: scrollTop, behavior: 'smooth' });
+                // 由于做了 syncScroll，inputLeft 会自动跟随
+            }
+
+            // 2. 添加高亮动画效果 (光标闪烁替代方案)
+            if (target.leftEl) target.leftEl.classList.add('active-diff-line');
+            if (target.rightEl) target.rightEl.classList.add('active-diff-line');
+
+            // 3. 聚焦输入框，方便用户直接修改（默认聚焦右侧）
+            inputRight.focus();
+
+            updateNavUI();
         }
 
-        function clearAll() {
-            document.getElementById('original').value = '';
-            document.getElementById('modified').value = '';
-            document.getElementById('original-display').innerHTML = '';
-            document.getElementById('modified-display').innerHTML = '';
-            document.getElementById('stats').classList.remove('show');
-        }
-
-        // 监听输入和粘贴事件
-        let updateTimer;
-        document.getElementById('original').addEventListener('input', () => {
-            clearTimeout(updateTimer);
-            updateTimer = setTimeout(updateDiff, 100);
-        });
-
-        document.getElementById('modified').addEventListener('input', () => {
-            clearTimeout(updateTimer);
-            updateTimer = setTimeout(updateDiff, 100);
-        });
-
-        // 监听滚动事件
-        document.getElementById('original').addEventListener('scroll', syncScroll);
-        document.getElementById('modified').addEventListener('scroll', syncScroll);
     </script>
 </body>
 </html>
